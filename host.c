@@ -111,6 +111,8 @@ int doKeyEvent(int kbd, int serial)
 		chName = "MODIFIERKEY_RIGHT_ALT";
 	else if (strcmp(chName, "KEY_LEFTALT") == 0)
 		chName = "MODIFIERKEY_LEFT_ALT";
+	else if (strcmp(chName, "KEY_CAPSLOCK") == 0)
+		chName = "KEY_CAPS_LOCK";
 	unsigned short teensykey;
 	for(unsigned int idx=0; ; idx++)
 	{
