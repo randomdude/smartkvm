@@ -112,13 +112,70 @@ int doKeyEvent(int kbd, int serial)
 	else if (strcmp(chName, "KEY_LEFTALT") == 0)
 		chName = "MODIFIERKEY_LEFT_ALT";
 	else if (strcmp(chName, "KEY_CAPSLOCK") == 0)
-		chName = "KEY_CAPS_LOCK";
+		chName = "MODIFIERKEY_LEFT_ALT";
+	else if (strcmp(chName, "KEY_GRAVE") == 0)
+		chName = "KEY_TILDE";
+	else if (strcmp(chName, "KEY_PAGEUP") == 0)
+		chName = "KEY_PAGE_UP";
+	else if (strcmp(chName, "KEY_PAGEDOWN") == 0)
+		chName = "KEY_PAGE_DOWN";
+	else if (strcmp(chName, "KEY_DOT") == 0)
+		chName = "KEY_PERIOD";
+	else if (strcmp(chName, "KEY_LEFTBRACE") == 0)
+		chName = "KEY_LEFT_BRACE";
+	else if (strcmp(chName, "KEY_RIGHTBRACE") == 0)
+		chName = "KEY_RIGHT_BRACE";
+	else if (strcmp(chName, "KEY_APOSTROPHE") == 0)
+		chName = "KEY_QUOTE";
+	else if (strcmp(chName, "KEY_SCROLLLOCK") == 0)
+		chName = "KEY_SCROLL_LOCK";
+	else if (strcmp(chName, "KEY_SYSREQ") == 0)	// Not sure about this one.. hm.
+		chName = "KEY_PRINTSCREEN";
+	else if (strcmp(chName, "KEY_NUMLOCK") == 0)
+		chName = "KEY_NUM_LOCK";
+	else if (strcmp(chName, "KEY_KP1") == 0)
+		chName = "KEYPAD_1";
+	else if (strcmp(chName, "KEY_KP2") == 0)
+		chName = "KEYPAD_2";
+	else if (strcmp(chName, "KEY_KP3") == 0)
+		chName = "KEYPAD_3";
+	else if (strcmp(chName, "KEY_KP4") == 0)
+		chName = "KEYPAD_4";
+	else if (strcmp(chName, "KEY_KP5") == 0)
+		chName = "KEYPAD_5";
+	else if (strcmp(chName, "KEY_KP6") == 0)
+		chName = "KEYPAD_6";
+	else if (strcmp(chName, "KEY_KP7") == 0)
+		chName = "KEYPAD_7";
+	else if (strcmp(chName, "KEY_KP8") == 0)
+		chName = "KEYPAD_8";
+	else if (strcmp(chName, "KEY_KP9") == 0)
+		chName = "KEYPAD_9";
+	else if (strcmp(chName, "KEY_KP0") == 0)
+		chName = "KEYPAD_0";
+	else if (strcmp(chName, "KEY_KPPLUS") == 0)
+		chName = "KEYPAD_PLUS";
+	else if (strcmp(chName, "KEY_KPENTER") == 0)
+		chName = "KEYPAD_ENTER";
+	else if (strcmp(chName, "KEY_KPMINUS") == 0)
+		chName = "KEYPAD_MINUS";
+	else if (strcmp(chName, "KEY_KPASTERISK") == 0)
+		chName = "KEYPAD_ASTERIX";		// (sic)
+	else if (strcmp(chName, "KEY_KPSLASH") == 0)
+		chName = "KEYPAD_SLASH";
+	else if (strcmp(chName, "KEY_KPDOT") == 0)
+		chName = "KEYPAD_PERIOD";
+	else if (strcmp(chName, "KEY_LEFTMETA") == 0)
+		chName = "MODIFIERKEY_LEFT_GUI";
+	else if (strcmp(chName, "KEY_RIGHTTMETA") == 0)
+		chName = "MODIFIERKEY_RIGHT_GUI";
 	unsigned short teensykey;
 	for(unsigned int idx=0; ; idx++)
 	{
 		if (teensykeys[idx].name == NULL)
 		{
 			// todo: error handling
+			printf("Not found: %s\n", chName);
 			ch = KEY_ESC;
 			break;
 		}
