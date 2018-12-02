@@ -16,17 +16,195 @@
 #include </usr/include/linux/vt.h>
 #include </usr/include/linux/input-event-codes.h>
 
-#include "keys-teensy.h"
-
 int serial = -1;
 
-unsigned char* KEYS[KEY_MAX];
-
-void initkeyArray()
+struct keyNameAndCode
 {
-	for (unsigned int n=0; n<KEY_MAX; n++)
-		KEYS[n] = "(unknown)";
-	#include "keys.h"
+	char* name;
+	short code;
+};
+
+#include "keys-teensy.h"
+#include "keys-linux.h"
+
+struct keyNameFixup {
+	char* src;
+	char* dest;
+};
+
+struct keyNameFixup keyNameFixups[] =
+{
+	{ "GRAVE", "TILDE" 		},
+	{ "DOT", "PERIOD" 		},
+	{ "KPDOT", "KPPERIOD" 		},
+	{ "LEFTGUI", "LEFTMETA" 	},
+	{ "RIGHTGUI", "RIGHTMETA" 	},
+	{ "APOSTROPHE", "QUOTE" 	},
+	{ "KPASTERIX", "KPASTERISK" 	},
+	// This one is a bit of a mystery. I'm not sure why pressing the physical
+	// printscreen key gives me a SYSRQ value on linux - and I have no idea
+	// why the teensy interprets "PRINTSCREEN" to mean "context menu".
+	{ "SYSRQ", "PRINTSCREEN"	},
+
+	{ NULL, NULL }
+};
+
+struct keyLookup
+{
+	unsigned short src;
+	unsigned short dest;
+};
+
+int doEvent(int kbd, struct keyLookup* keyCache, struct input_event kbdEvent);
+
+
+struct keyNameAndCode* cleanKeyNames(struct keyNameAndCode* toClean)
+{
+	int toCleanCount = 0;
+	struct keyNameAndCode* nextKey = toClean;
+	while(nextKey->name != NULL)
+	{
+		toCleanCount++;
+		nextKey++;
+	}
+
+	// Strip out any underscores. This will have the effect that
+	// (for example) LEFT_SHIFT becomes LEFTSHIFT, which is what
+	// keys.h contains.
+	struct keyNameAndCode* keysStripped = malloc(sizeof(struct keyNameAndCode) * toCleanCount);
+	for (unsigned int n=0; n<toCleanCount; n++)
+	{
+//		printf("%d %s\n", n, toClean[n].name);
+		keysStripped[n].name = malloc(strlen(toClean[n].name) + 1);
+		keysStripped[n].code = toClean[n].code;
+		unsigned int srcPos = 0;
+		unsigned int dstPos = 0;
+		unsigned char letter;
+		while((letter = toClean[n].name[srcPos]) != 0)
+		{
+			if (letter == '_')
+			{
+				srcPos++;
+				continue;
+			}
+			keysStripped[n].name[dstPos] = letter;
+			srcPos++;
+			dstPos++;
+		}
+		keysStripped[n].name[dstPos] = 0;
+//		printf("Stripped %s to %s\n", toClean[n], keysStripped[n]);
+	}
+
+	// Some start-of-string-based adjustments.
+	// Snip off leading substrings.
+	for (unsigned int n=0; n<toCleanCount; n++)
+	{
+		char* toRemoveList[] = { "MODIFIERKEY", "KEY", NULL };
+		char** toRemove = toRemoveList;
+		while(*toRemove != NULL)
+		{
+			if (strncmp(keysStripped[n].name, *toRemove, strlen(*toRemove)) == 0)
+			{
+				char* newName = malloc( (strlen(keysStripped[n].name) - strlen(*toRemove)) + 1);
+				strcpy(newName, &keysStripped[n].name[strlen(*toRemove)]);
+				free(keysStripped[n].name);
+				keysStripped[n].name = newName;
+			}
+			toRemove++;
+		}
+	}
+	// We also need to change leading 'KEYPAD' to 'KP'. Since we've already nixed leading 'KEY', all that remains
+	// will be the 'PAD'.
+	for (unsigned int n=0; n<toCleanCount; n++)
+	{
+		if (strncmp(keysStripped[n].name, "PAD", strlen("PAD")) == 0)
+		{
+			char* newName = malloc( (strlen(keysStripped[n].name) - strlen("PAD")) + strlen("KP") + 1);
+			strcpy(&newName[           0], "KP");
+			strcpy(&newName[strlen("KP")], &keysStripped[n].name[strlen("PAD")]);
+			free(keysStripped[n].name);
+			keysStripped[n].name = newName;
+		}
+	}
+
+	// Finally, a few hardcoded things that just won't match otherwise.
+	for (unsigned int n=0; n<toCleanCount; n++)
+	{
+		struct keyNameFixup* fixup = keyNameFixups;
+		while(fixup->src != NULL)
+		{
+			if (strcmp(keysStripped[n].name, fixup->src) == 0)
+			{
+				free(keysStripped[n].name);
+				keysStripped[n].name = malloc(strlen(fixup->dest) + 1);
+				strcpy(keysStripped[n].name, fixup->dest);
+			}
+			fixup++;
+		}
+	}
+	return keysStripped;
+}
+
+struct keyLookup* initkeyArray()
+{
+	struct keyNameAndCode* cleanedLinuxKeys = cleanKeyNames(linuxKeys);
+	struct keyNameAndCode* cleanedTeensyKeys = cleanKeyNames(teensyKeys);
+
+	int teensyKeyCount = 0;
+	struct keyNameAndCode* tmp = cleanedTeensyKeys;
+	while(tmp->name != NULL)
+	{
+		teensyKeyCount++;
+		tmp++;
+	}
+	struct keyLookup* toReturn = malloc(sizeof(struct keyLookup) * teensyKeyCount);
+	memset(toReturn, 0, sizeof(struct keyLookup) * (teensyKeyCount+1));
+	int resultsSoFar = 0;
+
+	struct keyNameAndCode* teensyEntry = cleanedTeensyKeys;
+	int matched = 0;
+	int failed = 0;
+	while(teensyEntry->name != NULL)
+	{
+		struct keyNameAndCode* linuxEntry = cleanedLinuxKeys;
+		while(linuxEntry->name != NULL)
+		{
+			if (strcmp(teensyEntry->name, linuxEntry->name) == 0)
+			{
+//				printf("Matched %hu to %hu for key '%s'\n", teensyEntry->code, linuxEntry->name);
+				// is it already in the results?
+				int alreadyThere = 0;
+				for (unsigned int n = 0; n < resultsSoFar; n++)
+				{
+					if (toReturn[n].src == linuxEntry->code)
+					{
+						printf("Supressing map %hu ('%s')->%hu ('%s') because it is already mapped to %hu\n", teensyEntry->code, teensyEntry->name, linuxEntry->code, linuxEntry->name, toReturn[n].dest);
+						alreadyThere = 1;
+						break;
+					}
+				}
+				if (!alreadyThere)
+				{
+//					printf("Match %d is from %hu '%s' to %hu '%s'\n", resultsSoFar, linuxEntry->code, linuxEntry->name, teensyEntry->code, teensyEntry->name);
+					toReturn[resultsSoFar].src = linuxEntry->code;
+					toReturn[resultsSoFar].dest  = teensyEntry->code;
+					resultsSoFar++;
+				}
+				matched++;
+				break;
+			}
+			linuxEntry++;
+		}
+		if (linuxEntry->name == NULL)
+		{
+			printf("Failed to match Teensy keycode %s\n", teensyEntry->name);
+			failed++;
+		}
+		teensyEntry++;
+	}
+	printf("Matched %d keycodes, failed %d\n", matched, failed);
+
+	return toReturn;
 }
 
 struct termios tioold;
@@ -51,7 +229,6 @@ void initSerial()
 
 void restoreSerial()
 {
-	// eh, why bother
 	tcsetattr(serial, TCSANOW, &tioold);
 }
 
@@ -87,28 +264,78 @@ void restoreTerminal(struct terminalState* terminalState)
 	tcsetattr(STDIN_FILENO, TCSANOW, &terminalState->termold);
 }
 
-int doEvent(int kbd)
+int doEventForDevice(int kbd, struct keyLookup* keyCache)
 {
-	unsigned char toSend[2];
-
+	// Read one event from the given FD, and proces it
 	struct input_event kbdEvent;
 	memset(&kbdEvent, 0, sizeof(struct input_event));
 	int bytesRead = read(kbd, &kbdEvent, sizeof(struct input_event));
 	if (bytesRead != sizeof(struct input_event))
 	{
 		printf("short read of kbd: %d of %d bytes\n", bytesRead, sizeof(struct input_event));
-		// todo
+		return 1;
 	}
-//	printf("%hu %hu 0x%08lx\n", kbdEvent.type, kbdEvent.code, kbdEvent.value);
-
-	if (kbdEvent.type == INPUT_PROP_POINTER)
+	int res = doEvent(kbd, keyCache, kbdEvent);
+	if (res == -1)
 	{
-		// idk lol
+		char* typeName;
+		switch (kbdEvent.type)
+		{
+			case EV_SYN:
+				typeName = "EV_SYN";
+				break;
+			case EV_KEY:
+				typeName = "EV_KEY";
+				break;
+			case EV_REL:
+				typeName = "EV_REL";
+				break;
+			case EV_ABS:
+				typeName = "EV_ABS";
+				break;
+			case EV_MSC:
+				typeName = "EV_MSC";
+				break;
+			case EV_SW:
+				typeName = "EV_SW";
+				break;
+			case EV_LED:
+				typeName = "EV_LED";
+				break;
+			case EV_SND:
+				typeName = "EV_SND";
+				break;
+			case EV_REP:
+				typeName = "EV_REP";
+				break;
+			case EV_FF:
+				typeName = "EV_FF";
+				break;
+//			This one isn't defined on my Raspbian 4.14.50+ box.
+//			case EV_POWER:
+//				typeName = "EV_POWER";
+//				break;
+			case EV_FF_STATUS:
+				typeName = "EV_FF_STATUS";
+				break;
+			default:
+				typeName = "(unknown)";
+		}
+
+		printf("Error processing input event: .type=%hu ('%s') .code=%hu .value=0x%08lx\n", kbdEvent.type, typeName, kbdEvent.code, kbdEvent.value);
 		return 0;
 	}
-	else if (kbdEvent.type == EV_MSC)
+	return res;
+
+}
+
+int doEvent(int kbd, struct keyLookup* keyCache, struct input_event kbdEvent)
+{
+	unsigned char toSend[2];
+
+	if (kbdEvent.type == INPUT_PROP_POINTER || kbdEvent.type == EV_MSC)
 	{
-		// idk lol
+		// idk, ignore it
 		return 0;
 	}
 	else if (kbdEvent.type == EV_KEY)
@@ -149,114 +376,64 @@ int doEvent(int kbd)
 		// OK, not a mouse button. It's probably a keyboard key.
 		short up;
 		if (kbdEvent.value == 0x01)
+		{
 			up = 0;
+		}
 		else if (kbdEvent.value == 0x00)
+		{
 			up = 1;
+		}
+		else if (kbdEvent.value == 0x02)
+		{
+			// This is generated when a key is repeating, due to
+			// it being held down (see input/event-codes.txt).
+			// I'm going to ignore it here and let the host OS
+			// on the remote machine interpret repeating keys.
+			// Not sure if this is best, or if I should try to
+			// standardize repeat settings over remote machines
+			// by having the local machine control repeating..
+			return 0;
+		}
+
+		struct keyLookup* cursor = keyCache;
+		unsigned short teensykey;
+		while(cursor->src != 0)
+		{
+			if (cursor->src == kbdEvent.code)
+			{
+				teensykey = cursor->dest;
+				break;
+			}
+			cursor++;
+		}
+		if (cursor->src == 0)
+		{
+			char* linuxKeyName;
+			struct keyNameAndCode* notFound = linuxKeys;
+			while(notFound->name != NULL)
+			{
+				if (kbdEvent.code == notFound->code)
+					break;
+				notFound++;
+			}
+			printf("Cannot locate mapping for Linux keycode %hu '%s'\n", kbdEvent.code, notFound->name);
+			return -1;
+		}
+	//	printf("%s: 0x%03lx (%s), teensy code 0x%04llx\n", up ? "up  " : "down", ch, chName, teensykey);
+
+		// for now, let the user bail by hitting ESCAPE
+		if (kbdEvent.code == KEY_ESC)
+			return 1;
+
+		// send the new key value.
+		if (up)
+			toSend[0] = 0x02;
 		else
-			return -1;
-
-		char* chName = KEYS[kbdEvent.code];
-		// Translate to the keycodes that the Teensy uses
-		// fix up modifier keys, since the teensy syntax is slightly different
-	if (strcmp(chName, "KEY_RIGHTSHIFT") == 0)
-		chName = "MODIFIERKEY_RIGHT_SHIFT";
-	else if (strcmp(chName, "KEY_LEFTSHIFT") == 0)
-		chName = "MODIFIERKEY_LEFT_SHIFT";
-	else if (strcmp(chName, "KEY_RIGHTCTRL") == 0)
-		chName = "MODIFIERKEY_RIGHT_CTRL";
-	else if (strcmp(chName, "KEY_LEFTCTRL") == 0)
-		chName = "MODIFIERKEY_LEFT_CTRL";
-	else if (strcmp(chName, "KEY_RIGHTALT") == 0)
-		chName = "MODIFIERKEY_RIGHT_ALT";
-	else if (strcmp(chName, "KEY_LEFTALT") == 0)
-		chName = "MODIFIERKEY_LEFT_ALT";
-	else if (strcmp(chName, "KEY_CAPSLOCK") == 0)
-		chName = "KEY_CAPS_LOCK";
-	else if (strcmp(chName, "KEY_GRAVE") == 0)
-		chName = "KEY_TILDE";
-	else if (strcmp(chName, "KEY_PAGEUP") == 0)
-		chName = "KEY_PAGE_UP";
-	else if (strcmp(chName, "KEY_PAGEDOWN") == 0)
-		chName = "KEY_PAGE_DOWN";
-	else if (strcmp(chName, "KEY_DOT") == 0)
-		chName = "KEY_PERIOD";
-	else if (strcmp(chName, "KEY_LEFTBRACE") == 0)
-		chName = "KEY_LEFT_BRACE";
-	else if (strcmp(chName, "KEY_RIGHTBRACE") == 0)
-		chName = "KEY_RIGHT_BRACE";
-	else if (strcmp(chName, "KEY_APOSTROPHE") == 0)
-		chName = "KEY_QUOTE";
-	else if (strcmp(chName, "KEY_SCROLLLOCK") == 0)
-		chName = "KEY_SCROLL_LOCK";
-	else if (strcmp(chName, "KEY_SYSREQ") == 0)	// Not sure about this one.. hm.
-		chName = "KEY_PRINTSCREEN";
-	else if (strcmp(chName, "KEY_NUMLOCK") == 0)
-		chName = "KEY_NUM_LOCK";
-	else if (strcmp(chName, "KEY_KP1") == 0)
-		chName = "KEYPAD_1";
-	else if (strcmp(chName, "KEY_KP2") == 0)
-		chName = "KEYPAD_2";
-	else if (strcmp(chName, "KEY_KP3") == 0)
-		chName = "KEYPAD_3";
-	else if (strcmp(chName, "KEY_KP4") == 0)
-		chName = "KEYPAD_4";
-	else if (strcmp(chName, "KEY_KP5") == 0)
-		chName = "KEYPAD_5";
-	else if (strcmp(chName, "KEY_KP6") == 0)
-		chName = "KEYPAD_6";
-	else if (strcmp(chName, "KEY_KP7") == 0)
-		chName = "KEYPAD_7";
-	else if (strcmp(chName, "KEY_KP8") == 0)
-		chName = "KEYPAD_8";
-	else if (strcmp(chName, "KEY_KP9") == 0)
-		chName = "KEYPAD_9";
-	else if (strcmp(chName, "KEY_KP0") == 0)
-		chName = "KEYPAD_0";
-	else if (strcmp(chName, "KEY_KPPLUS") == 0)
-		chName = "KEYPAD_PLUS";
-	else if (strcmp(chName, "KEY_KPENTER") == 0)
-		chName = "KEYPAD_ENTER";
-	else if (strcmp(chName, "KEY_KPMINUS") == 0)
-		chName = "KEYPAD_MINUS";
-	else if (strcmp(chName, "KEY_KPASTERISK") == 0)
-		chName = "KEYPAD_ASTERIX";		// (sic)
-	else if (strcmp(chName, "KEY_KPSLASH") == 0)
-		chName = "KEYPAD_SLASH";
-	else if (strcmp(chName, "KEY_KPDOT") == 0)
-		chName = "KEYPAD_PERIOD";
-	else if (strcmp(chName, "KEY_LEFTMETA") == 0)
-		chName = "MODIFIERKEY_LEFT_GUI";
-	else if (strcmp(chName, "KEY_RIGHTTMETA") == 0)
-		chName = "MODIFIERKEY_RIGHT_GUI";
-	unsigned short teensykey;
-	for(unsigned int idx=0; ; idx++)
-	{
-		if (teensykeys[idx].name == NULL)
-		{
-			printf("Key not found: '%s'\n", chName);
-			return -1;
-		}
-
-		if (strcmp(teensykeys[idx].name, chName) == 0)
-		{
-			teensykey = teensykeys[idx].code;
-			break;
-		}
-	}
-//	printf("%s: 0x%03lx (%s), teensy code 0x%04llx\n", up ? "up  " : "down", ch, chName, teensykey);
-
-	// for now, let the user bail by hitting ESCAPE
-	if (kbdEvent.code == KEY_ESC)
-		return 1;
-
-	// send the new key value.
-	if (up)
-		toSend[0] = 0x02;
-	else
-		toSend[0] = 0x01;
-	toSend[2] = teensykey & 0xff;
-	toSend[1] = (teensykey >> 8) & 0xff;
-	write(serial, toSend, 3);
+			toSend[0] = 0x01;
+		toSend[2] = teensykey & 0xff;
+		toSend[1] = (teensykey >> 8) & 0xff;
+		write(serial, toSend, 3);
+		printf("Serial send of keyboard event 0x%04hx: %02ux %02lx %02lx\n", teensykey, toSend[0], toSend[1], toSend[2]);
 	}
 	else if (kbdEvent.type == EV_REL)
 	{
@@ -284,7 +461,6 @@ int doEvent(int kbd)
 	}
 	else
 	{
-		printf("%hu %hu 0x%04lx\n", kbdEvent.type, kbdEvent.code, kbdEvent.value);
 		return -1;
 	}
 
@@ -296,8 +472,6 @@ int terminalStripped = 0;
 
 void sigIntHandlerFunction(int s)
 {
-	if (s != -1)
-		printf("Exiting on signal %d\n", s);
 	if (terminalStripped)
 		restoreTerminal(&origTerm);
 	if (serial != -1)
@@ -305,10 +479,11 @@ void sigIntHandlerFunction(int s)
 		restoreSerial();
 		close(serial);
 	}
-//	if (kbd != -1)
-//		close(kbd);
-//	if (mouse != -1)
-//		close(mouse);
+	// We leak FDs of opened /dev/input files here. No worries, the kernel will close them :$
+
+	if (s != -1)
+		printf("Exiting on signal %d\n", s);
+
 	exit(-1);
 }
 
@@ -377,13 +552,14 @@ int openInputFDs(unsigned int**monitoredFDs, unsigned int* monitoredFDCount)
 
 int main(void)
 {
-	initkeyArray();
+	struct keyLookup* keyLookupCache = initkeyArray();
 
 	struct sigaction sigIntHandler;
 	sigIntHandler.sa_handler = sigIntHandlerFunction;
 	sigemptyset(&sigIntHandler.sa_mask);
 	sigIntHandler.sa_flags = 0;
 	sigaction(SIGTERM, &sigIntHandler, NULL);
+	sigaction(SIGSEGV, &sigIntHandler, NULL);
 
 	unsigned int* monitoredFDs;
 	unsigned int monitoredFDCount;
@@ -425,7 +601,7 @@ int main(void)
 		{
 			if (FD_ISSET(monitoredFDs[n], &inputDevices))
 			{
-				timeToQuit = doEvent(monitoredFDs[n]);
+				timeToQuit = doEventForDevice(monitoredFDs[n], keyLookupCache);
 				if (timeToQuit)
 					sigIntHandlerFunction(-1);
 			}
