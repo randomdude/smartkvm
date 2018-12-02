@@ -17,6 +17,10 @@
 
 #include "keys-teensy.h"
 
+int serial = -1;
+int mouse = -1;
+int kbd = -1;
+
 unsigned char* KEYS[KEY_MAX];
 
 void initkeyArray()
@@ -74,9 +78,10 @@ void restoreTerminal(struct terminalState* terminalState)
 	tcsetattr(STDIN_FILENO, TCSANOW, &terminalState->termold);
 }
 
-int doKeyEvent(int kbd, int serial)
+int doEvent(int kbd, int serial)
 {
-	// Get the next char, as linux keycode, and find its name
+	unsigned char toSend[2];
+
 	struct input_event kbdEvent;
 	memset(&kbdEvent, 0, sizeof(struct input_event));
 	int bytesRead = read(kbd, &kbdEvent, sizeof(struct input_event));
@@ -85,20 +90,65 @@ int doKeyEvent(int kbd, int serial)
 		printf("short read of kbd: %d of %d bytes\n", bytesRead, sizeof(struct input_event));
 		// todo
 	}
+//	printf("%hu %hu 0x%08lx\n", kbdEvent.type, kbdEvent.code, kbdEvent.value);
 
-	if (kbdEvent.type != EV_KEY)
+	if (kbdEvent.type == INPUT_PROP_POINTER)
+	{
+		// idk lol
 		return 0;
-	short up;
-	if (kbdEvent.value == 0x01)
-		up = 0;
-	else if (kbdEvent.value == 0x00)
-		up = 1;
-	else
+	}
+	else if (kbdEvent.type == EV_MSC)
+	{
+		// idk lol
 		return 0;
-	short ch = kbdEvent.code;
-	char* chName = KEYS[ch];
-	// Translate to the keycodes that the Teensy uses
-	// fix up modifier keys, since the teensy syntax is slightly different
+	}
+	else if (kbdEvent.type == EV_KEY)
+	{
+		// First, is it a mouse button? If so, deal with that.
+		int isMouseButton = 1;
+		switch(kbdEvent.code)
+		{
+			case BTN_LEFT:
+				toSend[1] = 0x00;
+				break;
+			case BTN_RIGHT:
+				toSend[1] = 0x01;
+				break;
+			case BTN_MIDDLE:
+				toSend[1] = 0x02;
+				break;
+			case BTN_SIDE:
+				toSend[1] = 0x03;
+				break;
+			default:
+				isMouseButton = 0;
+				break;
+		}
+		if (isMouseButton)
+		{
+			if (kbdEvent.value == 0)
+				toSend[2] = 0x00;
+			else if (kbdEvent.value == 1)
+				toSend[2] = 0x01;
+			else
+				return -1;
+			toSend[0] = 0x06;
+			write(serial, toSend, 3);
+			return 0;
+		}
+
+		// OK, not a mouse button. It's probably a keyboard key.
+		short up;
+		if (kbdEvent.value == 0x01)
+			up = 0;
+		else if (kbdEvent.value == 0x00)
+			up = 1;
+		else
+			return -1;
+
+		char* chName = KEYS[kbdEvent.code];
+		// Translate to the keycodes that the Teensy uses
+		// fix up modifier keys, since the teensy syntax is slightly different
 	if (strcmp(chName, "KEY_RIGHTSHIFT") == 0)
 		chName = "MODIFIERKEY_RIGHT_SHIFT";
 	else if (strcmp(chName, "KEY_LEFTSHIFT") == 0)
@@ -174,11 +224,10 @@ int doKeyEvent(int kbd, int serial)
 	{
 		if (teensykeys[idx].name == NULL)
 		{
-			// todo: error handling
-			printf("Not found: %s\n", chName);
-			ch = KEY_ESC;
-			break;
+			printf("Key not found: '%s'\n", chName);
+			return -1;
 		}
+
 		if (strcmp(teensykeys[idx].name, chName) == 0)
 		{
 			teensykey = teensykeys[idx].code;
@@ -188,11 +237,10 @@ int doKeyEvent(int kbd, int serial)
 //	printf("%s: 0x%03lx (%s), teensy code 0x%04llx\n", up ? "up  " : "down", ch, chName, teensykey);
 
 	// for now, let the user bail by hitting ESCAPE
-	if (ch == KEY_ESC)
+	if (kbdEvent.code == KEY_ESC)
 		return 1;
 
-	// and send it.
-	unsigned char toSend[2];
+	// send the new key value.
 	if (up)
 		toSend[0] = 0x02;
 	else
@@ -200,102 +248,36 @@ int doKeyEvent(int kbd, int serial)
 	toSend[2] = teensykey & 0xff;
 	toSend[1] = (teensykey >> 8) & 0xff;
 	write(serial, toSend, 3);
-
-	return 0;
-}
-
-int doMouseEvent(int mouse, int serial)
-{
-	struct input_event mouseEvent;
-	memset(&mouseEvent, 0, sizeof(struct input_event));
-	int bytesRead = read(mouse, &mouseEvent, sizeof(struct input_event));
-	if (bytesRead != sizeof(struct input_event))
-	{
-		printf("short read of mouse: %d of %d bytes\n", bytesRead, sizeof(struct input_event));
-		return 0;
 	}
-
-	unsigned char toSend[2];
-	memset(toSend, 0, 3);
-	if (mouseEvent.type == INPUT_PROP_POINTER)
+	else if (kbdEvent.type == EV_REL)
 	{
-		// idk lol
-		return 0;
-	}
-	else if (mouseEvent.type == EV_KEY)
-	{
-//		printf("%hu %hu 0x%04lx\n", mouseEvent.type, mouseEvent.code, mouseEvent.value);
-		toSend[0] = 0x06;
-		if (mouseEvent.code == BTN_LEFT)
+		// Relative mouse movement.
+		if (kbdEvent.code == REL_X)
 		{
-//			printf("Left button %s\n", mouseEvent.value ? "down" : "up");
-			toSend[1] = 0x00;
-		}
-		else if (mouseEvent.code == BTN_RIGHT)
-		{
-//			printf("Right button %s\n", mouseEvent.value ? "down" : "up");
-			toSend[1] = 0x01;
-		}
-		else if (mouseEvent.code == BTN_MIDDLE)
-		{
-//			printf("Middle button %s\n", mouseEvent.value ? "down" : "up");
-			toSend[1] = 0x02;
-		}
-		else if (mouseEvent.code == BTN_SIDE)
-		{
-//			printf("Side button %s\n", mouseEvent.value ? "down" : "up");
-			toSend[1] = 0x03;
-		}
-		else
-		{
-			printf("Mouse button %d: %s\n", mouseEvent.code, KEYS[mouseEvent.code]);
-			return 0;
-		}
-	}
-	else if (mouseEvent.type == EV_MSC)
-	{
-		return 0;
-//		if (mouseEvent.code == MSC_SCAN)
-//		{
-//			printf("Keyboard scancode: 0x%08lx\n", mouseEvent.value);
-//		}
-//		else
-//		{
-//			printf("Unrecognised EV_MSC: %hu 0x%04lx\n", mouseEvent.type, mouseEvent.code, mouseEvent.value);
-//		}
-	}
-	else if (mouseEvent.type == EV_REL)
-	{
-		if (mouseEvent.code == REL_X)
-		{
-//			printf("X = 0x%d\n", mouseEvent.value);
 			toSend[0] = 0x03;
 		}
-		else if (mouseEvent.code == REL_Y)
+		else if (kbdEvent.code == REL_Y)
 		{
-//			printf("Y = 0x%d\n", mouseEvent.value);
 			toSend[0] = 0x04;
 		}
-		else if (mouseEvent.code == REL_WHEEL)
+		else if (kbdEvent.code == REL_WHEEL)
 		{
-//			printf("Scrollwheel = 0x%d\n", mouseEvent.value);
 			toSend[0] = 0x05;
 		}
 		else
 		{
-			printf("Unrecognised EV_REL: %hu 0x%04lx\n", mouseEvent.type, mouseEvent.code, mouseEvent.value);
-			return 0;
+			printf("Unrecognised EV_REL: %hu 0x%04lx\n", kbdEvent.type, kbdEvent.code, kbdEvent.value);
+			return -1;
 		}
+		toSend[2] = kbdEvent.value;
+		toSend[1] = 0;
+		write(serial, toSend, 3);
 	}
 	else
 	{
-		printf("%hu %hu 0x%04lx\n", mouseEvent.type, mouseEvent.code, mouseEvent.value);
+		printf("%hu %hu 0x%04lx\n", kbdEvent.type, kbdEvent.code, kbdEvent.value);
+		return -1;
 	}
-
-	toSend[2] = mouseEvent.value;
-//	printf("Sending bytes: 0x%02x 0x%02x 0x%02x\n", toSend[0], toSend[1], toSend[2]);
-	write(serial, toSend, 3);
-	sleep(0.1);
 
 	return 0;
 }
@@ -308,6 +290,12 @@ void sigIntHandlerFunction(int s)
 	printf("Exiting on signal %d\n", s);
 	if (terminalStripped)
 		restoreTerminal(&origTerm);
+	if (serial != -1)
+		close(serial);
+	if (kbd != -1)
+		close(kbd);
+	if (mouse != -1)
+		close(mouse);
 	exit(-1);
 }
 
@@ -324,14 +312,14 @@ int main(void)
 	stripTerminal(&origTerm);
 	terminalStripped = 1;
 
-	int mouse = open("/dev/input/by-id/usb-Kensington_Kensington_Expert_Mouse-event-mouse", O_NONBLOCK);
+	mouse = open("/dev/input/by-id/usb-Kensington_Kensington_Expert_Mouse-event-mouse", O_NONBLOCK);
 	if (mouse == -1)
 	{
 		printf("Can't open mouse");
 		return -1;
 	}
 	printf("Mouse device opened OK\n");
-	int kbd = open("/dev/input/by-id/usb-ROCCAT_ROCCAT_Suora-event-kbd", O_NONBLOCK);
+	kbd = open("/dev/input/by-id/usb-ROCCAT_ROCCAT_Suora-event-kbd", O_NONBLOCK);
 	if (kbd == -1)
 	{
 		printf("Can't open kbd");
@@ -339,7 +327,7 @@ int main(void)
 	}
 	printf("Keyboard device opened OK\n");
 
-	int serial = open("/dev/ttyAMA0", O_RDWR | O_NOCTTY);
+	serial = open("/dev/ttyAMA0", O_RDWR | O_NOCTTY);
 	if (serial == -1)
 	{
 		printf("Can't open serial port\n");
@@ -368,13 +356,12 @@ int main(void)
 		}
 		if (FD_ISSET(mouse, &inputDevices))
 		{
-			if (doMouseEvent(mouse, serial))
-				timeToQuit = 1;
+			timeToQuit = doEvent(mouse, serial);
 		}
 		if (FD_ISSET(kbd, &inputDevices))
 		{
-			if (doKeyEvent(kbd, serial))
-				timeToQuit = 1;
+			if (!timeToQuit)
+				timeToQuit = doEvent(kbd, serial);
 		}
 
 		if (timeToQuit)
