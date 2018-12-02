@@ -17,6 +17,7 @@
 #include </usr/include/linux/input-event-codes.h>
 
 int serial = -1;
+int exitOnEscape = 1;
 
 struct keyNameAndCode
 {
@@ -41,10 +42,8 @@ struct keyNameFixup keyNameFixups[] =
 	{ "RIGHTGUI", "RIGHTMETA" 	},
 	{ "APOSTROPHE", "QUOTE" 	},
 	{ "KPASTERIX", "KPASTERISK" 	},
-	// This one is a bit of a mystery. I'm not sure why pressing the physical
-	// printscreen key gives me a SYSRQ value on linux - and I have no idea
-	// why the teensy interprets "PRINTSCREEN" to mean "context menu".
 	{ "SYSRQ", "PRINTSCREEN"	},
+	{ "COMPOSE", "MENU"	},
 
 	{ NULL, NULL }
 };
@@ -215,13 +214,15 @@ void initSerial()
 
 	tcgetattr(serial, &tioold);
 	memcpy(&tionew, &tioold, sizeof(struct termios));
-	tionew.c_cflag |= B9600;
-	tionew.c_cflag |= CS8;
-	tionew.c_cflag |= CREAD;
+	tionew.c_cflag |= B9600 | CS8 | CREAD;
+
 	tionew.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL | ISIG);
+
 	tionew.c_oflag &= ~OPOST;
-	tionew.c_iflag &= ~(INPCK | PARMRK | IXON | IXOFF | IXANY | BRKINT | IGNCR);
+
+	tionew.c_iflag &= ~(INPCK | PARMRK | IXON | IXOFF | IXANY | BRKINT | INLCR | IGNCR | ISTRIP);
 	tionew.c_iflag |= (IGNPAR | IGNBRK );
+
 	tionew.c_cc[VTIME] = 10;
 	tionew.c_cc[VMIN] = 1;
 	tcsetattr(serial, TCSANOW, &tionew);
@@ -243,8 +244,11 @@ void stripTerminal(struct terminalState* terminalState)
 {
 	struct termios termnew;
 	tcgetattr(STDIN_FILENO, &terminalState->termold);
-	termnew = terminalState->termold;
-	termnew.c_lflag &= ~(ECHO | ICANON | ISIG | ISTRIP | INLCR | IGNCR | IXON | IXOFF );
+	memcpy(&termnew, &terminalState->termold, sizeof(struct termios));
+	termnew.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL | ISIG );
+	termnew.c_iflag &= ~(INPCK  | PARMRK | IXON | IXOFF | IXANY | BRKINT | INLCR | IGNCR | ISTRIP );
+	termnew.c_iflag |=  (IGNPAR | IGNBRK);
+	termnew.c_oflag |= (OPOST);
 	tcsetattr(STDIN_FILENO, TCSANOW, &termnew);
 
 	ioctl(STDIN_FILENO, KDGKBMODE, &terminalState->oldkbmode);
@@ -276,6 +280,7 @@ int doEventForDevice(int kbd, struct keyLookup* keyCache)
 		return 1;
 	}
 	int res = doEvent(kbd, keyCache, kbdEvent);
+//	printf("Processed input event: .type=%hu .code=%hu .value=0x%08lx\n", kbdEvent.type, kbdEvent.code, kbdEvent.value);
 	if (res == -1)
 	{
 		char* typeName;
@@ -333,10 +338,22 @@ int doEvent(int kbd, struct keyLookup* keyCache, struct input_event kbdEvent)
 {
 	unsigned char toSend[2];
 
-	if (kbdEvent.type == INPUT_PROP_POINTER || kbdEvent.type == EV_MSC)
+	if (kbdEvent.type == EV_SYN)
 	{
 		// idk, ignore it
 		return 0;
+	}
+	else if (kbdEvent.type == EV_MSC)
+	{
+		if (kbdEvent.code == MSC_SCAN)
+		{
+			// Ignore scancode events
+			return 0;
+		}
+		else
+		{
+			return -1;
+		}
 	}
 	else if (kbdEvent.type == EV_KEY)
 	{
@@ -406,6 +423,7 @@ int doEvent(int kbd, struct keyLookup* keyCache, struct input_event kbdEvent)
 			}
 			cursor++;
 		}
+		// Error out if not found
 		if (cursor->src == 0)
 		{
 			char* linuxKeyName;
@@ -421,9 +439,12 @@ int doEvent(int kbd, struct keyLookup* keyCache, struct input_event kbdEvent)
 		}
 	//	printf("%s: 0x%03lx (%s), teensy code 0x%04llx\n", up ? "up  " : "down", ch, chName, teensykey);
 
-		// for now, let the user bail by hitting ESCAPE
-		if (kbdEvent.code == KEY_ESC)
-			return 1;
+		// If enabled, let the user bail by hitting ESCAPE
+		if (exitOnEscape)
+		{
+			if (kbdEvent.code == KEY_ESC)
+				return 1;
+		}
 
 		// send the new key value.
 		if (up)
@@ -433,7 +454,7 @@ int doEvent(int kbd, struct keyLookup* keyCache, struct input_event kbdEvent)
 		toSend[2] = teensykey & 0xff;
 		toSend[1] = (teensykey >> 8) & 0xff;
 		write(serial, toSend, 3);
-		printf("Serial send of keyboard event 0x%04hx: %02ux %02lx %02lx\n", teensykey, toSend[0], toSend[1], toSend[2]);
+//		printf("Serial send of keyboard event 0x%04hx: %02hx %02hx %02lx\n", teensykey, toSend[0], toSend[1], toSend[2]);
 	}
 	else if (kbdEvent.type == EV_REL)
 	{
@@ -550,8 +571,37 @@ int openInputFDs(unsigned int**monitoredFDs, unsigned int* monitoredFDCount)
 	return 1;
 }
 
-int main(void)
+int main(int argc, char** argv)
 {
+	int malformedCommandLine = 0;
+	if (argc == 2)
+	{
+		if (strcmp(argv[1], "-noescape") == 0)
+		{
+			exitOnEscape = 0;
+		}
+		else
+		{
+			malformedCommandLine = 1;
+		}
+	}
+	if (argc > 2)
+		malformedCommandLine= 1;
+	if (malformedCommandLine)
+	{
+		printf("Keyboard/mouse to RS232 redirector, host end\n");
+		printf("Usage: %s [-noescape]", argv[0]);
+		printf("\t-noescape: do not exit on ESCAPE\n");
+		printf("\n\
+This tool will take over your terminal quite aggressively - even\n\
+CTRL-ALT-DEL will no longer be recognised. In an emergency, you \n\
+can kill it from a non-local session, or if that fails, use the \n\
+magic sysreq key (if configured in your kernel) to restore the  \n\
+terminal mode (alt-sysreq, r). Then you can ctrl-alt-f2 and kill\n\
+this tool without messing up your terminal.\n");
+		return -1;
+	}
+
 	struct keyLookup* keyLookupCache = initkeyArray();
 
 	struct sigaction sigIntHandler;
