@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <errno.h>
 #include <sys/ioctl.h>
+#include <dirent.h>
 
 #include <linux/input.h>
 #include </usr/include/linux/kd.h>
@@ -18,8 +19,6 @@
 #include "keys-teensy.h"
 
 int serial = -1;
-int mouse = -1;
-int kbd = -1;
 
 unsigned char* KEYS[KEY_MAX];
 
@@ -32,18 +31,28 @@ void initkeyArray()
 
 struct termios tioold;
 
-void initSerial(int serial)
+void initSerial()
 {
 	struct termios tionew;
 
 	tcgetattr(serial, &tioold);
-	memset(&tionew, 0, sizeof(struct termios));
-	tionew.c_cflag = B9600 | CS8 | CREAD;
-	tionew.c_lflag = 0;
-	tionew.c_oflag = 0;
-	tionew.c_cc[VTIME] = 0;
+	memcpy(&tionew, &tioold, sizeof(struct termios));
+	tionew.c_cflag |= B9600;
+	tionew.c_cflag |= CS8;
+	tionew.c_cflag |= CREAD;
+	tionew.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL | ISIG);
+	tionew.c_oflag &= ~OPOST;
+	tionew.c_iflag &= ~(INPCK | PARMRK | IXON | IXOFF | IXANY | BRKINT | IGNCR);
+	tionew.c_iflag |= (IGNPAR | IGNBRK );
+	tionew.c_cc[VTIME] = 10;
 	tionew.c_cc[VMIN] = 1;
 	tcsetattr(serial, TCSANOW, &tionew);
+}
+
+void restoreSerial()
+{
+	// eh, why bother
+	tcsetattr(serial, TCSANOW, &tioold);
 }
 
 struct terminalState
@@ -78,7 +87,7 @@ void restoreTerminal(struct terminalState* terminalState)
 	tcsetattr(STDIN_FILENO, TCSANOW, &terminalState->termold);
 }
 
-int doEvent(int kbd, int serial)
+int doEvent(int kbd)
 {
 	unsigned char toSend[2];
 
@@ -287,16 +296,83 @@ int terminalStripped = 0;
 
 void sigIntHandlerFunction(int s)
 {
-	printf("Exiting on signal %d\n", s);
+	if (s != -1)
+		printf("Exiting on signal %d\n", s);
 	if (terminalStripped)
 		restoreTerminal(&origTerm);
 	if (serial != -1)
+	{
+		restoreSerial();
 		close(serial);
-	if (kbd != -1)
-		close(kbd);
-	if (mouse != -1)
-		close(mouse);
+	}
+//	if (kbd != -1)
+//		close(kbd);
+//	if (mouse != -1)
+//		close(mouse);
 	exit(-1);
+}
+
+int openInputFDs(unsigned int**monitoredFDs, unsigned int* monitoredFDCount)
+{
+	*monitoredFDCount = 0;
+
+	// Open anything matching /dev/input/event*
+	DIR* d;
+	struct dirent* fileEntry;
+	char* inputDirectoryName = "/dev/input";
+	d = opendir(inputDirectoryName);
+	if (!d)
+	{
+		int s = errno;
+		printf("Failed to open directory %s, errno %d\n", inputDirectoryName, errno);
+		return s;
+	}
+	while( (fileEntry = readdir(d)) != NULL)
+	{
+		if (memcmp(fileEntry->d_name, "event", strlen("event")) != 0)
+			continue;
+		(*monitoredFDCount)++;
+	}
+	rewinddir(d);
+	*monitoredFDs = (int*)malloc(sizeof(int) * (*monitoredFDCount));
+	memset(*monitoredFDs, 0, sizeof(int) * (*monitoredFDCount));
+	unsigned int n = 0;
+	int atLeastOneFailure = 0;
+	while( (fileEntry = readdir(d)) != NULL)
+	{
+		if (memcmp(fileEntry->d_name, "event", strlen("event")) != 0)
+			continue;
+		errno = 0;
+
+		int fullPathLen = strlen(inputDirectoryName) + 1 + strlen(fileEntry->d_name) + 1;	// directory, slash, filename, terminating null
+		char* fullPathName = malloc(fullPathLen);
+		snprintf(fullPathName, fullPathLen, "%s/%s", inputDirectoryName, fileEntry->d_name);
+		(*monitoredFDs)[n] = open(fullPathName, O_NONBLOCK);
+		free(fullPathName);
+
+		if ((*monitoredFDs)[n] == -1)
+		{
+			printf("Failed to open device '%s', errno %d\n", fileEntry->d_name, errno);
+			atLeastOneFailure = 1;
+		}
+		else
+		{
+			printf("Monitoring %s as FD %d (%d)\n", fileEntry->d_name, n, (*monitoredFDs)[n]);
+		}
+		n++;
+	}
+	if (atLeastOneFailure)
+	{
+		for(unsigned int n=0; n<(*monitoredFDCount); n++)
+		{
+			if ((*monitoredFDs)[n] != -1)
+				close((*monitoredFDs)[n]);
+		}
+		free(*monitoredFDs);
+		return 0;
+	}
+
+	return 1;
 }
 
 int main(void)
@@ -309,68 +385,50 @@ int main(void)
 	sigIntHandler.sa_flags = 0;
 	sigaction(SIGTERM, &sigIntHandler, NULL);
 
+	unsigned int* monitoredFDs;
+	unsigned int monitoredFDCount;
+	if (!openInputFDs(&monitoredFDs, &monitoredFDCount))
+		return -1;
+
 	stripTerminal(&origTerm);
 	terminalStripped = 1;
 
-	mouse = open("/dev/input/by-id/usb-Kensington_Kensington_Expert_Mouse-event-mouse", O_NONBLOCK);
-	if (mouse == -1)
-	{
-		printf("Can't open mouse");
-		return -1;
-	}
-	printf("Mouse device opened OK\n");
-	kbd = open("/dev/input/by-id/usb-ROCCAT_ROCCAT_Suora-event-kbd", O_NONBLOCK);
-	if (kbd == -1)
-	{
-		printf("Can't open kbd");
-		return -1;
-	}
-	printf("Keyboard device opened OK\n");
-
-	serial = open("/dev/ttyAMA0", O_RDWR | O_NOCTTY);
+	serial = open("/dev/ttyAMA0", O_RDWR); //| O_NOCTTY);
 	if (serial == -1)
 	{
 		printf("Can't open serial port\n");
-		return -1;
+		sigIntHandlerFunction(-1);
 	}
 	printf("Serial device opened OK\n");
-	initSerial(serial);
-
+	initSerial();
 
 	int timeToQuit = 0;
 	while(1)
 	{
 		fd_set inputDevices;
 		FD_ZERO(&inputDevices);
-		FD_SET(mouse, &inputDevices);
-		FD_SET(kbd, &inputDevices);
-		int highestfd = mouse;
-		if (kbd > mouse)
-			highestfd = kbd;
+		int highestfd = 0;
+		for(unsigned int n=0; n<monitoredFDCount; n++)
+		{
+			FD_SET(monitoredFDs[n], &inputDevices);
+			if (monitoredFDs[n] > highestfd)
+				highestfd = monitoredFDs[n];
+		}
 
 		int s = select(highestfd + 1, &inputDevices, NULL, NULL, NULL);
 		if (s == -1)
 		{
 			printf("Failed to select() on input FDs: errno %d\n", errno);
-			// todo
+			sigIntHandlerFunction(-1);
 		}
-		if (FD_ISSET(mouse, &inputDevices))
+		for(unsigned int n=0; n<monitoredFDCount; n++)
 		{
-			timeToQuit = doEvent(mouse, serial);
-		}
-		if (FD_ISSET(kbd, &inputDevices))
-		{
-			if (!timeToQuit)
-				timeToQuit = doEvent(kbd, serial);
-		}
-
-		if (timeToQuit)
-		{
-			restoreTerminal(&origTerm);
-			tcsetattr(serial, TCSANOW, &tioold);
-			close(serial);
-			close(mouse);
-			return 0;
+			if (FD_ISSET(monitoredFDs[n], &inputDevices))
+			{
+				timeToQuit = doEvent(monitoredFDs[n]);
+				if (timeToQuit)
+					sigIntHandlerFunction(-1);
+			}
 		}
 	}
 }
