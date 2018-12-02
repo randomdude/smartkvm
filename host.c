@@ -112,7 +112,7 @@ int doKeyEvent(int kbd, int serial)
 	else if (strcmp(chName, "KEY_LEFTALT") == 0)
 		chName = "MODIFIERKEY_LEFT_ALT";
 	else if (strcmp(chName, "KEY_CAPSLOCK") == 0)
-		chName = "MODIFIERKEY_LEFT_ALT";
+		chName = "KEY_CAPS_LOCK";
 	else if (strcmp(chName, "KEY_GRAVE") == 0)
 		chName = "KEY_TILDE";
 	else if (strcmp(chName, "KEY_PAGEUP") == 0)
