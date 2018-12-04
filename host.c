@@ -43,7 +43,8 @@ struct keyNameFixup keyNameFixups[] =
 	{ "APOSTROPHE", "QUOTE" 	},
 	{ "KPASTERIX", "KPASTERISK" 	},
 	{ "SYSRQ", "PRINTSCREEN"	},
-	{ "COMPOSE", "MENU"	},
+	{ "COMPOSE", "MENU"		},
+	{ "102ND", "NONUSBS"		},
 
 	{ NULL, NULL }
 };
@@ -170,7 +171,7 @@ struct keyLookup* initkeyArray()
 		{
 			if (strcmp(teensyEntry->name, linuxEntry->name) == 0)
 			{
-//				printf("Matched %hu to %hu for key '%s'\n", teensyEntry->code, linuxEntry->name);
+//				printf("Matched %hu to %hu for key '%s'\n", teensyEntry->code, linuxEntry->code, linuxEntry->name);
 				// is it already in the results?
 				int alreadyThere = 0;
 				for (unsigned int n = 0; n < resultsSoFar; n++)
