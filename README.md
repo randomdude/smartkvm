@@ -25,7 +25,7 @@ Open the .ino in the Arduino IDE, build it, and upload it to your Teensy.
 
 Then, build the Linux host sw. You'll need to build from Linux.
 
-* Run 'genkeys.sh', to generate keys.h
+* Run 'genkeys.sh', to generate keys-linux.h
 * Run 'genkeys-teensy.sh', passing it your arduino install path, which will togenerate keys-teensy.h
 * Compile it:
   gcc host.c -o host
