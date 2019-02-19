@@ -14,6 +14,6 @@ gcc host.c -o host
 chmod +x ./host
 
 # And then the teensy code.
-./arduino-1.8.8/arduino --board teens:avr:teensy2:speed=16,usb=hid,keys=en-gb -v -pref build.path=usbext-build usbext/usbext.ino
+./arduino-1.8.8/arduino --board teensy:avr:teensy2:speed=16,usb=hid,keys=en-gb -v --pref build.path=usbext-build --verify usbext/usbext.ino
 
 ls host usbext-build/usbext.ino.hex
