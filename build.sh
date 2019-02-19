@@ -1,9 +1,9 @@
 
 # Install the Arduino and Teensy tools
-wget https://downloads.arduino.cc/arduino-1.8.8-linux64.tar.xz
+wget -q https://downloads.arduino.cc/arduino-1.8.8-linux64.tar.xz
 tar -Jxf arduino-1.8.8-linux64.tar.xz
 ./arduino-1.8.8/install.sh >/dev/null
-wget https://www.pjrc.com/teensy/td_145/TeensyduinoInstall.linux64
+wget -q https://www.pjrc.com/teensy/td_145/TeensyduinoInstall.linux64
 chmod +x TeensyduinoInstall.linux64
 ./TeensyduinoInstall.linux64 --dir=`pwd`/arduino-1.8.8
 
