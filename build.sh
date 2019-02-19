@@ -9,7 +9,7 @@ chmod +x TeensyduinoInstall.linux64
 
 # Now we can build the host-side C stuff
 ./genkeys.sh
-./genkeys-teensy.sh `pwd`/aruino-1.8.8
+./genkeys-teensy.sh `pwd`/arduino-1.8.8
 gcc host.c -o host
 chmod +x ./host
 
