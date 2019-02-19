@@ -1,4 +1,4 @@
-#include "keyboard.h"
+#include "Keyboard.h"
 
 #define HWSERIAL Serial1
 
