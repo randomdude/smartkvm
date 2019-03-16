@@ -41,7 +41,6 @@ void loop()
       if (bytes[0] == 0x01)
       {
         Keyboard.press((bytes[1] << 8) | bytes[2]);
-//        Mouse.move(0x10, 0);
       }
       else if (bytes[0] == 0x02)
       {
@@ -49,7 +48,6 @@ void loop()
       }
       else if (bytes[0] == 0x03)
       {
-//        Keyboard.press('A');
         Mouse.move(bytes[2], 0);
       }
       else if (bytes[0] == 0x04)
@@ -91,7 +89,4 @@ void loop()
       pipeStage = 0;
     }
   }
-  
-//  delay(1000);
-//  digitalWrite(11, LOW);
 }

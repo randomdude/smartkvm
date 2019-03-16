@@ -74,7 +74,6 @@ struct keyNameAndCode* cleanKeyNames(struct keyNameAndCode* toClean)
 	struct keyNameAndCode* keysStripped = malloc(sizeof(struct keyNameAndCode) * toCleanCount);
 	for (unsigned int n=0; n<toCleanCount; n++)
 	{
-//		printf("%d %s\n", n, toClean[n].name);
 		keysStripped[n].name = malloc(strlen(toClean[n].name) + 1);
 		keysStripped[n].code = toClean[n].code;
 		unsigned int srcPos = 0;
@@ -92,7 +91,6 @@ struct keyNameAndCode* cleanKeyNames(struct keyNameAndCode* toClean)
 			dstPos++;
 		}
 		keysStripped[n].name[dstPos] = 0;
-//		printf("Stripped %s to %s\n", toClean[n], keysStripped[n]);
 	}
 
 	// Some start-of-string-based adjustments.
@@ -171,7 +169,6 @@ struct keyLookup* initkeyArray()
 		{
 			if (strcmp(teensyEntry->name, linuxEntry->name) == 0)
 			{
-//				printf("Matched %hu to %hu for key '%s'\n", teensyEntry->code, linuxEntry->code, linuxEntry->name);
 				// is it already in the results?
 				int alreadyThere = 0;
 				for (unsigned int n = 0; n < resultsSoFar; n++)
@@ -185,7 +182,6 @@ struct keyLookup* initkeyArray()
 				}
 				if (!alreadyThere)
 				{
-//					printf("Match %d is from %hu '%s' to %hu '%s'\n", resultsSoFar, linuxEntry->code, linuxEntry->name, teensyEntry->code, teensyEntry->name);
 					toReturn[resultsSoFar].src = linuxEntry->code;
 					toReturn[resultsSoFar].dest  = teensyEntry->code;
 					resultsSoFar++;
@@ -281,7 +277,6 @@ int doEventForDevice(int kbd, struct keyLookup* keyCache)
 		return 1;
 	}
 	int res = doEvent(kbd, keyCache, kbdEvent);
-//	printf("Processed input event: .type=%hu .code=%hu .value=0x%08lx\n", kbdEvent.type, kbdEvent.code, kbdEvent.value);
 	if (res == -1)
 	{
 		char* typeName;
@@ -438,7 +433,6 @@ int doEvent(int kbd, struct keyLookup* keyCache, struct input_event kbdEvent)
 			printf("Cannot locate mapping for Linux keycode %hu '%s'\n", kbdEvent.code, notFound->name);
 			return -1;
 		}
-	//	printf("%s: 0x%03lx (%s), teensy code 0x%04llx\n", up ? "up  " : "down", ch, chName, teensykey);
 
 		// If enabled, let the user bail by hitting ESCAPE
 		if (exitOnEscape)
@@ -455,7 +449,6 @@ int doEvent(int kbd, struct keyLookup* keyCache, struct input_event kbdEvent)
 		toSend[2] = teensykey & 0xff;
 		toSend[1] = (teensykey >> 8) & 0xff;
 		write(serial, toSend, 3);
-//		printf("Serial send of keyboard event 0x%04hx: %02hx %02hx %02lx\n", teensykey, toSend[0], toSend[1], toSend[2]);
 	}
 	else if (kbdEvent.type == EV_REL)
 	{
@@ -620,7 +613,7 @@ this tool without messing up your terminal.\n");
 	stripTerminal(&origTerm);
 	terminalStripped = 1;
 
-	serial = open("/dev/ttyAMA0", O_RDWR); //| O_NOCTTY);
+	serial = open("/dev/ttyAMA0", O_RDWR);
 	if (serial == -1)
 	{
 		printf("Can't open serial port\n");
