@@ -16,6 +16,19 @@ lol. MAX_TINFOIL_HAT. Get some RS232-to-fibre converters.
 
 # Building #
 
+## Easy mode - use Docker ##
+
+Just use Docker to build/run the container. Binaries will be in the container at /root/host (for the Linux-based host side) and /root/usbext-build/usbext.ino.hex (for the Teensy firmware).
+
+> docker build -t tmp .
+> docker run --name tmp tmp
+> docker cp tmp:/root/host ./host
+> docker cp tmp:/root/usbext-build/usbext.ino.hex .
+
+If you have problems, take a look at the Jenkinsfile - the procedure in there should always work, so if it doesn't, raise a bug.
+
+## PITA mode - do it yourself ##
+
 First, install:
 
 * The Arduno IDE: https://www.arduino.cc/en/Main/Software
@@ -33,4 +46,4 @@ Then, build the Linux host sw. You'll need to build from Linux.
 * Run it:
   ./host
 
-Sorted.
+Sorted. If it doesn't work, take a look at the Dockerfile to work out what's wrong, and raise a bug either to fix the Dockerfile or update this documentation.
