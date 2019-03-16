@@ -20,10 +20,12 @@ lol. MAX_TINFOIL_HAT. Get some RS232-to-fibre converters.
 
 Just use Docker to build/run the container. Binaries will be in the container at /root/host (for the Linux-based host side) and /root/usbext-build/usbext.ino.hex (for the Teensy firmware).
 
-> docker build -t tmp .
-> docker run --name tmp tmp
-> docker cp tmp:/root/host ./host
-> docker cp tmp:/root/usbext-build/usbext.ino.hex .
+```bash
+docker build -t tmp .
+docker run --name tmp tmp
+docker cp tmp:/root/host ./host
+docker cp tmp:/root/usbext-build/usbext.ino.hex .
+```
 
 If you have problems, take a look at the Jenkinsfile - the procedure in there should always work, so if it doesn't, raise a bug.
 
