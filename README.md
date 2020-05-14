@@ -6,7 +6,9 @@ This project builds on 'keyboardMouseExtender', which allows you to send keyboar
 
 # Use
 
-Hit SCROLL LOCK twice, followed by a two-digit head number, and then RETURN. Kapow, both KVMs will be set to the head you desire! You can also map your KVMs arbitrarily - so, for example, selecting inputs 1-4 could put your main monitor on machines 1-4, but set your secondary monitor to input 9. Or you could set input 1 to select input 2 on the first KVM and input 3 on the second KVM. The world's your oyster.
+Hit SCROLL LOCK twice, followed by a two-digit head number, and then RETURN. Kapow, both KVMs will be set to the head you desire! If you want to set the first KVM only, use the left-arrow key instead of return. Likewise, to set only the second, use the right-arrow key.
+
+You can also map your KVMs arbitrarily - so, for example, selecting inputs 1-4 could put your main monitor on machines 1-4, but set your secondary monitor to input 9. Or you could set input 1 to select input 2 on the first KVM and input 3 on the second KVM. The world's your oyster.
 
 # Setup
 

@@ -162,11 +162,20 @@ void sendKeyStroke(unsigned int key, bool upNotDown)
     }
     
     // Otherwise, we are currently recieving a command. The keystroke is already stored in 'keystrokes'. Since commands are terminated
-    // with a RETURN, check if the last thing the user pressed was that.
+    // with either RETURN or an arrow key, check if the last thing the user pressed was one of those..
     commandBytePos++;
-    if (keystrokes[0] == KEY_RETURN)
+    if (keystrokes[0] == KEY_RETURN || keystrokes[0] == KEY_LEFT || keystrokes[0] == KEY_RIGHT)
     {
-      // OK, the user has specified a new head! It may be one or two characters, so find those two digits.
+      // OK, the user has specified a new head! If the user hit RETURN, we will process this. If the user hit LEFT, we will only process it if we are head 1,
+      // and if the user hit RIGHT, if we are head 0. This lets the user toggle heads individually.
+      if (  (keystrokes[0] == KEY_LEFT  and thisHeadID != 1) ||
+            (keystrokes[0] == KEY_RIGHT and thisHeadID != 0)   )
+      {
+        recievingCommand = false;
+        return;
+      }
+      
+      // The new head ID it may be one or two characters, so find those two digits.
       unsigned int headIDLow = 0;
       unsigned int headIDHigh = 0;
       if (commandBytePos > 1 )
