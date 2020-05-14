@@ -13,7 +13,7 @@
 
 unsigned int heads[][16] = {
   {  1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16 },
-  {  1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8 },
+  {  0, 0, 3, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
 // If your KVM uses a keystroke other than two taps of SCROLL LOCK to change head, change this.
