@@ -1,20 +1,43 @@
 # About #
 
-Put your servers in a different room, and control them from a raspberry pi via an RS232 link. No network neccessary. Supports keyboard and mouse.
-There's a linux end, which runs on the Pi. The Pi then has a long serial cable, into your server room, which then connects to a 'teensy' (ie, https://www.pjrc.com/teensy). This will then run some Arduino code which emulates a keyboard and mouse.
+Got more than one monitor? More than one machine? Want a dual-head KVM that doesn't cost the earth and supports fancy features? If so, then this is for you!
 
-## Why?! Why not just SSH/RDP?! ##
+This project builds on 'keyboardMouseExtender', which allows you to send keyboard and mouse data via RS284 to a host. This version is enhanced with features that make it more useful to multi-head setups. It'll even control more than two KVMs - simply add a USB Teensy 2.0 board for each KVM.
 
-Because network latency sucks. Combine it with some uncompressed video extension (in my case, HDBaseT at 4k) for that nice cosy "I forgot it was in the other room" feeling.
-Note that some HDMI forwarding devices also integrate USB-tunnelling functionality, which you can use if you prefer. Note that they often integrate virtual USB hubs, which they present to the host - which can confuse the KVM, as in my case, so I thought I'd roll my own.
+# Use
 
-## But RS232 sucks! It doesn't go far enough! ##
-Get some RS232-to-RS485 converters. Sorted.
+Hit SCROLL LOCK twice, followed by a two-digit head number, and then RETURN. Kapow, both KVMs will be set to the head you desire! You can also map your KVMs arbitrarily - so, for example, selecting inputs 1-4 could put your main monitor on machines 1-4, but set your secondary monitor to input 9. Or you could set input 1 to select input 2 on the first KVM and input 3 on the second KVM. The world's your oyster.
 
-## I'm really really scared of the APT logging my keystrokes by observing the EM the RS232/RS485 link emits ##
-lol. MAX_TINFOIL_HAT. Get some RS232-to-fibre converters.
+# Setup
 
-# Building #
+Set up a single head as usual (see 'keyboardMouseExtender'). Once that works, attach a second Teensy in parallel with the first. Connect it to a second KVM via USB. Place a jumper on pin 0 of the Teensy, and set it to 0 for one head, and 1 for another. Open usbext.ino, and configure KVM mappings:
+```
+unsigned int heads[][16] = {
+  {  1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16 },
+  {  1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8 },
+};
+```
+
+By default, the code will communicate with a KVM and change head by sending the sequence of two SCROLL LOCK presses, and then the number of the head desired. If your KVM is different, also change:
+```
+// If your KVM uses a keystroke other than two taps of SCROLL LOCK to change head, change this.
+#define KVM_CMD_SEQ_LEN 2
+unsigned int kvm_cmd_seq[KVM_CMD_SEQ_LEN] = {KEY_SCROLL_LOCK, KEY_SCROLL_LOCK }
+```
+
+With that done, build as per below.
+
+# Building (hardware) #
+
+Acquire:
+ * Two MAX485-based TTL-to-rs485 boards
+ * One Teensy 2.0 for each KVM
+
+On the keyboard side, attach a TTL-to-RS485 board to the serial UART of your host PC. I used the ttl-level uart of a raspberry pi. Note that the data flow is one-directional, so you only need to connect the pin going out of the pi to DI. Connect power and gnd, and then connect a 10K resistor with one end at vcc and the other end connecting to both RE and DE, which will place this board in transmit mode. Lay two long wires from this board your server room and attach them to the A and B rs485 outputs.
+
+In the server room, take your other RS485-to-TTL reciever board. Jumper RE and DE to 0v (to put the board in receive mode). Connect gnd and vcc to the power pins on the Teensy (the top ones). Connect the RO pin to pin 7 ('D2') on your Teensy. Wire a jumper on pin 0 (B2) of the teensy (10k pull up and jumper to ground). Repeat this for all your Teensy boards, wiring them all to the same vcc/gnd. Finally, set the jumper you installed to open on head 0 and closed on head 1. Et voila!
+
+# Building (software) #
 
 ## Easy mode - use Docker ##
 
@@ -33,10 +56,10 @@ If you have problems, take a look at the Jenkinsfile - the procedure in there sh
 
 First, install:
 
-* The Arduno IDE: https://www.arduino.cc/en/Main/Software
+* The Arduno IDE: https://www.arduino.cc/en/Main/Software, or `choco install -y arduino`
 * Teensy tools: https://www.pjrc.com/teensy/td_download.html
 
-Open the .ino in the Arduino IDE, build it, and upload it to your Teensy.
+Open the .ino in the Arduino IDE, build it, and upload the resulting .hex file to your Teensy.
 
 Then, build the Linux host sw. You'll need to build from Linux.
 
