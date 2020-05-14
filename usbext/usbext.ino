@@ -23,10 +23,6 @@ unsigned int kvm_cmd_seq[KVM_CMD_SEQ_LEN] = {KEY_SCROLL_LOCK, KEY_SCROLL_LOCK };
 // We use the hardware serial on the Teensy - pin 7, marked D2.
 #define HWSERIAL Serial1
 
-// Bytes come in the serial link and are accumilated here until there is enough to fill a packet of
-// two or three bytes.
-char bytes[3];
-
 // The last few keypresses, used to detect the commands used to change heads.
 unsigned int keystrokes[5];
 
@@ -195,20 +191,20 @@ void sendKeyStroke(unsigned int key, bool upNotDown)
   }
 }
 
-void processPacket(char bytes[3])
+void processPacket(unsigned char* bytes)
 {
   switch(bytes[0])
   {
     // command 1, keyboard key down
     case 0x01:
-      sendKeyStroke((bytes[1] << 8) | bytes[2], false);
+        sendKeyStroke((bytes[1] << 8) | bytes[2], false);
       break;
     // command 2, keyboard key up
     case 0x02:
       sendKeyStroke((bytes[1] << 8) | bytes[2], true);
       break;
     
-    // The rest is stuff pertaining to the mouse.
+    // The rest is stuff pertaining to the mouse. 
     // First, a relative move on the X axis:
     case 0x03:
       Mouse.move(bytes[2], 0);
@@ -243,32 +239,37 @@ void processPacket(char bytes[3])
 
 void loop()
 {
-  unsigned char incomingByte;
+  unsigned char bytes[3];
 
-  // Read a three-byte 'packet'.
-  if (HWSERIAL.available() > 0)
+  while(true)
   {
-    incomingByte = HWSERIAL.read();
-    bytes[pipeStage] = incomingByte;
-
-    if (pipeStage == 0)
+    unsigned char incomingByte;
+    
+    // Read a three-byte 'packet'.
+    if (HWSERIAL.available() > 0)
     {
-      // ignore it if it's an unrecognised command byte. Maybe we're desynced or something (todo: timeout)
-      if ((incomingByte > 0x00) && (incomingByte <0x07))
+      incomingByte = HWSERIAL.read();
+      bytes[pipeStage] = incomingByte;
+  
+      if (pipeStage == 0)
       {
-        pipeStage = 0;
-        return;
+        // ignore it if it's an unrecognised command byte. Maybe we're desynced or something (todo: timeout)
+        if ((incomingByte < 0x00) || (incomingByte > 0x07))
+        {
+          pipeStage = 0;
+          continue;
+        }
       }
+  
+      // If we have a full packet, process it.
+      if (pipeStage == 2)
+      {
+        processPacket(bytes);
+        pipeStage = 0;
+        continue;
+      }
+  
+      pipeStage++;
     }
-
-    // If we have a full packet, process it.
-    if (pipeStage == 2)
-    {
-      processPacket(bytes);
-      pipeStage = 0;
-      return;
-    }
-
-    pipeStage++;
   }
 }
