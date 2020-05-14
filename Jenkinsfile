@@ -2,7 +2,7 @@ node('linux')
 {
     checkout scm
     
-    def customImage = docker.build("smartKVM:${env.BUILD_ID}")
+    def customImage = docker.build("smartkvm:${env.BUILD_ID}")
     def container = customImage.run()
     sh script: "docker wait ${container.id}"
     sh script: "docker logs ${container.id}"
