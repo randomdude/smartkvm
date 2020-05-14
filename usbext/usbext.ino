@@ -1,4 +1,4 @@
-#include "keyboard.h"
+#include "Keyboard.h"
 
 // Adjust this according to your needs. It defines which KVM inputs are selected when the user requests
 // a given head. Each entry in the 'heads' array is a flat list of mappings - an example:
