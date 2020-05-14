@@ -18,7 +18,7 @@ unsigned int heads[][16] = {
 
 // If your KVM uses a keystroke other than two taps of SCROLL LOCK to change head, change this.
 #define KVM_CMD_SEQ_LEN 2
-unsigned int kvm_cmd_seq[KVM_CMD_SEQ_LEN] = {KEY_SCROLL_LOCK, KEY_SCROLL_LOCK }
+unsigned int kvm_cmd_seq[KVM_CMD_SEQ_LEN] = {KEY_SCROLL_LOCK, KEY_SCROLL_LOCK };
 
 // We use the hardware serial on the Teensy - pin 7, marked D2.
 #define HWSERIAL Serial1
@@ -108,26 +108,26 @@ void switchhead(unsigned int newHead)
   unsigned int keysToSend[KVM_CMD_SEQ_LEN + 2];
 
   // Assemble the keystrokes we will send to the KVM. First, the command sequence:
-  memcpy(keysToSend, kvm_cmd_seq, sizeof(unsigned int) + KVM_CMD_SEQ_LEN;
+  memcpy(keysToSend, kvm_cmd_seq, sizeof(unsigned int) * KVM_CMD_SEQ_LEN);
 
   // And then two digits representing the desired head.
 
-  keys[KVM_CMD_SEQ_LEN + 0] = decimalToKey(newHead / 10);
-  keys[KVM_CMD_SEQ_LEN + 1] = decimalToKey(newHead % 10);
+  keysToSend[KVM_CMD_SEQ_LEN + 0] = decimalToKey(newHead / 10);
+  keysToSend[KVM_CMD_SEQ_LEN + 1] = decimalToKey(newHead % 10);
   
   // Now send each.
   for(unsigned int n=0; n<4; n++)
   {
     // My KVM doesn't like leading zeros - if we move to head 5, for example, it doesn't want us to type '05' but just 5.
     // Skip if this is the case.
-    if ( (n == KVM_CMD_SEQ_LEN + 0) && (keys[n] == KEY_0))
+    if ( (n == KVM_CMD_SEQ_LEN + 0) && (keysToSend[n] == KEY_0))
       continue;
     
     // Otherwise, press and release that key.
     delay(500);
-    Keyboard.press(keys[n]);
+    Keyboard.press(keysToSend[n]);
     delay(100);
-    Keyboard.release(keys[n]);
+    Keyboard.release(keysToSend[n]);
   }
 }
 
@@ -195,7 +195,7 @@ void sendKeyStroke(unsigned int key, bool upNotDown)
   }
 }
 
-void processPacket(unsigned int bytes[3])
+void processPacket(char bytes[3])
 {
   switch(bytes[0])
   {
@@ -237,6 +237,7 @@ void processPacket(unsigned int bytes[3])
       break;
   default:
     // todo: error handling
+    break;
   }
 }
 
@@ -256,16 +257,16 @@ void loop()
       if ((incomingByte > 0x00) && (incomingByte <0x07))
       {
         pipeStage = 0;
-        continue;
+        return;
       }
     }
 
     // If we have a full packet, process it.
     if (pipeStage == 2)
     {
-      processPacket(bytes)
+      processPacket(bytes);
       pipeStage = 0;
-      continue;
+      return;
     }
 
     pipeStage++;
