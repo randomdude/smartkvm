@@ -157,8 +157,8 @@ void sendKeyStroke(unsigned int key, bool upNotDown)
         // Two SCROLL LOCK hits! A command follows. Note this down and return - we will be called with subsequent characters later.
         recievingCommand = true;
         commandBytePos = 0;
-        return;
       }
+      return;
     }
     
     // Otherwise, we are currently recieving a command. The keystroke is already stored in 'keystrokes'. Since commands are terminated
